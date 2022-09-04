@@ -1,3 +1,78 @@
+//! A small background checker to ensure your executable code doesn't change, e.g. due to cosmic rays, rowhammer attacks, etc.
+//! To this end it periodically computes a checksum of all your executable pages in memory.
+//!
+//! # Basic Usage
+//!
+//! ```rust
+//!   use process_consistency::ProcessConsistencyChecker;
+//!   std::thread::spawn(|| {ProcessConsistencyChecker::new().run(|error| {panic!("Memory Error: {:#?}", &error)}).unwrap()});
+//! ```
+//!
+//! The call to [run()](ProcessConsistencyChecker::run) only returns when it encounters (non-memory) errors. If a diverging hash
+//! is found, the provided callback is called with additional info, including which library/binary was affected.
+//!
+//! # SAFETY
+//!
+//! This crate reads pointers from addresses provided by the operating system. This is only safe if these memory regions stay mapped into the process.
+//! Gernerally this is not a problem, but if you unload a shared library (e.g. by calling FreeLibrary on Windows, or dlclose on Linux) this causes
+//! race conditions that can lead to this library reading unmapped memory
+//!
+//! Running with [skip_libs(true)](ProcessConsistencyChecker::skip_libs) should be safe even in the presence of FreeLibrary/dlclose calls
+//!
+//! # Advanced Usage
+//!
+//! You can decrease the search radius, e.g. if you are not concerned about shared libraries (including those of your OS) you can use
+//!
+//! ```rust
+//!   use process_consistency::ProcessConsistencyChecker;
+//!   std::thread::spawn(|| {ProcessConsistencyChecker::new().skip_libs(true).search_once(true).run(|error| {panic!("Memory Error: {:#?}", &error)}).unwrap()});
+//! ```
+//!
+//! On the other hand if you are paranoid, you might find situations where also considering pages marked as executable but writable is desirable:
+//!
+//! ```rust
+//!   use process_consistency::ProcessConsistencyChecker;
+//!   std::thread::spawn(|| {ProcessConsistencyChecker::new().include_writable_code(true).run(|error| {panic!("Memory Error: {:#?}", &error)}).unwrap()});
+//! ```
+//!
+//! You can also change how often the checks should be run:
+//!
+//! ```rust
+//!   use std::time::Duration;
+//!   use process_consistency::ProcessConsistencyChecker;
+//!   std::thread::spawn(|| {ProcessConsistencyChecker::new().check_period(Duration::from_secs(60)).run(|error| {panic!("Memory Error: {:#?}", &error)}).unwrap()});
+//! ```
+//!
+//! To get a rough idea of the implications of the chosen parameters, or just to figure out which shared libraries are loaded (hint: more than you think), there is a [benchmark](ProcessConsistencyChecker::benchmark) call
+//!
+//! ```rust
+//!   use std::time::Duration;
+//!   use process_consistency::ProcessConsistencyChecker;
+//!   println!("{:#?}", ProcessConsistencyChecker::new().benchmark().unwrap());
+//! ```
+//!
+//!
+//! # Hash Algorithm
+//!
+//!  The used hash algorithm is determined by feature flags. Blake3 is the default.
+//!
+//! To use with *blake3* hash use
+//! ```toml
+//! [dependencies]
+//! process_consistency = "0.1.0"
+//! ```
+//!
+//! To use with *crc64* hash use
+//! ```toml
+//! [dependencies]
+//! process_consistency = { version = "0.1.0", default-features = false, features = ["crc64"] }
+//! ```
+//!
+//! Blake3 is a cryptographically strong hash, but if you are just worried about cosmic rays you get about a 2x speedup with
+//! crc64 (in release mode!, in debug mode blake3 is faster).
+//!
+//!
+
 #![deny(unsafe_op_in_unsafe_fn)]
 
 use std::{collections::HashMap, time::Instant};
@@ -5,9 +80,9 @@ use std::{collections::HashMap, time::Instant};
 use error::Error;
 
 #[cfg(linux)]
-pub mod linux;
+mod linux;
 #[cfg(windows)]
-pub mod windows;
+mod windows;
 
 pub mod error;
 
@@ -18,10 +93,14 @@ type Hash = u64;
 #[cfg(all(not(feature = "blake3"), not(feature = "crc64")))]
 compile_error!("either feature blake3 or crc64 has to be enabled");
 
+/// A hashed memory region
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct Region {
+    /// first address of the region
     pub start: *const u8,
+    /// last address of the region + 1
     pub end: *const u8,
+    /// where does this code come from (usually a valid Path)
     pub source: String,
 }
 
@@ -122,6 +201,7 @@ impl Default for ProcessConsistencyChecker {
 }
 
 /// details about an encountered memory inconsistency
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryError<'a> {
     /// the address, size and origin of the region where the error occurred
     pub region: &'a Region,
@@ -144,7 +224,7 @@ fn get_all_regions(skip_libs: bool, include_writable_code: bool) -> Result<Vec<R
 
 /// Return type of functions that don't return
 ///
-/// see https://doc.rust-lang.org/std/primitive.never.html
+/// see <https://doc.rust-lang.org/std/primitive.never.html>
 pub enum Never {}
 
 fn run_checker(
@@ -201,11 +281,17 @@ fn run_checker(
     }
 }
 
+/// The result of a [benchmark()](ProcessConsistencyChecker::benchmark) call
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BenchmarkResult {
+    /// how much time was spent finding which memory regions to hash
     scan_time: std::time::Duration,
+    /// how much time was spent hashing memory regions
     hash_time: std::time::Duration,
-    scanned_bytes: isize,
+    /// how many bytes were hashed in total
+    hashed_bytes: isize,
+    /// which regions were hashed (including where they come from)
+    regions: Vec<Region>,
 }
 
 fn run_benchmark(config: &CheckerConfig) -> Result<BenchmarkResult, Error> {
@@ -220,10 +306,11 @@ fn run_benchmark(config: &CheckerConfig) -> Result<BenchmarkResult, Error> {
     Ok(BenchmarkResult {
         scan_time: t1 - t0,
         hash_time: t2 - t1,
-        scanned_bytes: regions
-            .into_iter()
+        hashed_bytes: regions
+            .iter()
             .map(|r| unsafe { r.end.offset_from(r.start) })
             .sum(),
+        regions,
     })
 }
 

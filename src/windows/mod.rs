@@ -85,8 +85,9 @@ impl TryFrom<MODULEENTRY32W> for Module {
 }
 
 impl Module {
+    #[allow(dead_code)]
     /// print status, protection and type flags of all pages to stdout
-    pub fn debug_pages(&self) -> Result<(), Error> {
+    pub(crate) fn debug_pages(&self) -> Result<(), Error> {
         let mut states = vec![];
         let mut protects = vec![];
         let mut types = vec![];
