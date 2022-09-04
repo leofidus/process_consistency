@@ -3,6 +3,8 @@
 A small background checker to ensure your executable code doesn't change, e.g. due to cosmic rays, rowhammer attacks, etc.
 To this end it periodically computes a checksum of all your executable pages in memory.
 
+Compatible with Windows and Linux only
+
 [![Crates.io](https://img.shields.io/crates/v/process_consistency)](https://crates.io/crates/process_consistency)
 [![Documentation](https://docs.rs/process_consistency/badge.svg)](https://docs.rs/process_consistency)
 ![Lines of code](https://img.shields.io/tokei/lines/github/leofidus/process_consistency)
@@ -77,7 +79,7 @@ process_consistency = { version = "0.1.0", default-features = false, features = 
 ```
 
 Blake3 is a cryptographically strong hash, but if you are just worried about cosmic rays you get about a 2x speedup with
-crc64 (in release mode!, in debug mode blake3 is faster).
+crc64 (in release mode!, in debug mode blake3 is faster). Crc64 also has slightly fewer dependencies
 
 ## License
 

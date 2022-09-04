@@ -1,11 +1,15 @@
 //! A small background checker to ensure your executable code doesn't change, e.g. due to cosmic rays, rowhammer attacks, etc.
 //! To this end it periodically computes a checksum of all your executable pages in memory.
 //!
+//! Compatible with Windows and Linux only
+//!
 //! # Basic Usage
 //!
 //! ```rust
 //!   use process_consistency::ProcessConsistencyChecker;
-//!   std::thread::spawn(|| {ProcessConsistencyChecker::new().run(|error| {panic!("Memory Error: {:#?}", &error)}).unwrap()});
+//!   std::thread::spawn(|| {
+//!     ProcessConsistencyChecker::new().run(|error| { panic!("Memory Error: {:#?}", &error) }).unwrap()
+//!   });
 //! ```
 //!
 //! The call to [run()](ProcessConsistencyChecker::run) only returns when it encounters (non-memory) errors. If a diverging hash
@@ -25,14 +29,23 @@
 //!
 //! ```rust
 //!   use process_consistency::ProcessConsistencyChecker;
-//!   std::thread::spawn(|| {ProcessConsistencyChecker::new().skip_libs(true).search_once(true).run(|error| {panic!("Memory Error: {:#?}", &error)}).unwrap()});
+//!   std::thread::spawn(|| {
+//!     ProcessConsistencyChecker::new()
+//!       .skip_libs(true)
+//!       .search_once(true)
+//!       .run(|error| {panic!("Memory Error: {:#?}", &error)
+//!   }).unwrap()});
 //! ```
 //!
 //! On the other hand if you are paranoid, you might find situations where also considering pages marked as executable but writable is desirable:
 //!
 //! ```rust
 //!   use process_consistency::ProcessConsistencyChecker;
-//!   std::thread::spawn(|| {ProcessConsistencyChecker::new().include_writable_code(true).run(|error| {panic!("Memory Error: {:#?}", &error)}).unwrap()});
+//!   std::thread::spawn(|| {
+//!     ProcessConsistencyChecker::new()
+//!       .include_writable_code(true)
+//!       .run(|error| {panic!("Memory Error: {:#?}", &error)}).unwrap()
+//!   });
 //! ```
 //!
 //! You can also change how often the checks should be run:
@@ -40,7 +53,11 @@
 //! ```rust
 //!   use std::time::Duration;
 //!   use process_consistency::ProcessConsistencyChecker;
-//!   std::thread::spawn(|| {ProcessConsistencyChecker::new().check_period(Duration::from_secs(60)).run(|error| {panic!("Memory Error: {:#?}", &error)}).unwrap()});
+//!   std::thread::spawn(|| {
+//!     ProcessConsistencyChecker::new()
+//!       .check_period(Duration::from_secs(60))
+//!       .run(|error| {panic!("Memory Error: {:#?}", &error)}).unwrap()
+//!   });
 //! ```
 //!
 //! To get a rough idea of the implications of the chosen parameters, or just to figure out which shared libraries are loaded (hint: more than you think), there is a [benchmark](ProcessConsistencyChecker::benchmark) call
@@ -69,7 +86,7 @@
 //! ```
 //!
 //! Blake3 is a cryptographically strong hash, but if you are just worried about cosmic rays you get about a 2x speedup with
-//! crc64 (in release mode!, in debug mode blake3 is faster).
+//! crc64 (in release mode!, in debug mode blake3 is faster). Crc64 also has slightly fewer dependencies
 //!
 //!
 
@@ -87,11 +104,22 @@ mod windows;
 pub mod error;
 
 #[cfg(feature = "blake3")]
-type Hash = [u8; 32];
+type HashInner = [u8; 32];
 #[cfg(all(not(feature = "blake3"), feature = "crc64"))]
-type Hash = u64;
+type HashInner = u64;
 #[cfg(all(not(feature = "blake3"), not(feature = "crc64")))]
 compile_error!("either feature blake3 or crc64 has to be enabled");
+
+/// Hash of a [Region](Region)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Hash(HashInner);
+
+impl Hash {
+    /// return inner value. Note that its type changes depending on the hash algorithm chosen by feature flags
+    pub fn inner(self) -> HashInner {
+        self.0
+    }
+}
 
 /// A hashed memory region
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
@@ -124,12 +152,12 @@ impl Region {
         };
 
         #[cfg(feature = "blake3")]
-        return blake3::hash(slice).into();
+        return Hash(blake3::hash(slice).into());
         #[cfg(all(not(feature = "blake3"), feature = "crc64"))]
         {
             let mut digest = crc64fast::Digest::new();
             digest.write(slice);
-            digest.sum64()
+            Hash(digest.sum64())
         }
     }
 }
@@ -142,6 +170,7 @@ struct CheckerConfig {
     include_writable_code: bool,
 }
 
+/// Config Builder
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct ProcessConsistencyChecker {
     config: CheckerConfig,
@@ -201,7 +230,7 @@ impl Default for ProcessConsistencyChecker {
     }
 }
 
-/// details about an encountered memory inconsistency
+/// Details about an encountered memory inconsistency
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MemoryError<'a> {
     /// the address, size and origin of the region where the error occurred
@@ -282,7 +311,7 @@ fn run_checker(
     }
 }
 
-/// The result of a [benchmark()](ProcessConsistencyChecker::benchmark) call
+/// Result of a [benchmark()](ProcessConsistencyChecker::benchmark) call
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BenchmarkResult {
     /// how much time was spent finding which memory regions to hash

@@ -7,12 +7,14 @@ pub enum Error {
         code: i32,
         message: String,
     },
+    /// Procfs files not available at the expected location
     #[error("Unable to read from procfs under {path}: {source}")]
     ProcFsUnavailableError {
         #[source]
         source: std::io::Error,
         path: std::path::PathBuf,
     },
+    /// Procfs files have unexpected format
     #[error("Unexpected format in {path}")]
     ProcFsFormatError { path: std::path::PathBuf },
 }
