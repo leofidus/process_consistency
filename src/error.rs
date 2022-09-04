@@ -8,7 +8,7 @@ pub enum Error {
         message: String,
     },
     #[error("Unable to read from procfs under {path}: {source}")]
-    ProcFsUnavailable {
+    ProcFsUnavailableError {
         #[source]
         source: std::io::Error,
         path: std::path::PathBuf,

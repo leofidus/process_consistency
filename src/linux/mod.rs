@@ -12,7 +12,7 @@ pub fn get_executable_regions(
 ) -> Result<Vec<Region>, Error> {
     let mut regions = vec![];
     let path = std::path::Path::new("/proc/self/maps");
-    let file = File::open(path).map_err(|e| Error::ProcFsUnavailable {
+    let file = File::open(path).map_err(|e| Error::ProcFsUnavailableError {
         source: e,
         path: path.to_owned(),
     })?;
@@ -24,7 +24,7 @@ pub fn get_executable_regions(
     };
 
     for line in BufReader::new(file).lines() {
-        let line = line.map_err(|e| Error::ProcFsUnavailable {
+        let line = line.map_err(|e| Error::ProcFsUnavailableError {
             source: e,
             path: path.to_owned(),
         })?;

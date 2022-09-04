@@ -134,7 +134,7 @@ impl Region {
     }
 }
 
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone, Debug, Hash, PartialEq, Eq)]
 struct CheckerConfig {
     search_once: bool,
     skip_libs: bool,
@@ -142,7 +142,7 @@ struct CheckerConfig {
     include_writable_code: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct ProcessConsistencyChecker {
     config: CheckerConfig,
 }
@@ -183,12 +183,13 @@ impl ProcessConsistencyChecker {
         self
     }
 
-    /// start running checks
+    /// start running checks. Calls error_callback whenever the hash of a memory region changes. If hashes can't be
+    /// calculated returns an Error, otherwise it doesn't return
     pub fn run(&self, error_callback: ErrorCallback) -> Result<Never, Error> {
         run_checker(&self.config, error_callback)
     }
 
-    /// start benchmark
+    /// start benchmark. Runs a single round of hashing and returns statistics
     pub fn benchmark(&self) -> Result<BenchmarkResult, Error> {
         run_benchmark(&self.config)
     }
@@ -201,7 +202,7 @@ impl Default for ProcessConsistencyChecker {
 }
 
 /// details about an encountered memory inconsistency
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MemoryError<'a> {
     /// the address, size and origin of the region where the error occurred
     pub region: &'a Region,

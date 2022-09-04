@@ -78,3 +78,10 @@ process_consistency = { version = "0.1.0", default-features = false, features = 
 
 Blake3 is a cryptographically strong hash, but if you are just worried about cosmic rays you get about a 2x speedup with
 crc64 (in release mode!, in debug mode blake3 is faster).
+
+## License
+
+process_consistency is dual-licensed under
+
+* Apache 2.0 license ([LICENSE-Apache](./LICENSE-Apache) or <http://www.apache.org/licenses/LICENSE-2.0>)
+* MIT license ([LICENSE-MIT](./LICENSE-MIT) or <https://opensource.org/licenses/MIT>)
