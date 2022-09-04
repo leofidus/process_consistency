@@ -4,7 +4,7 @@ use std::{collections::HashMap, time::Instant};
 
 use error::Error;
 
-// #[cfg(linux)]
+#[cfg(linux)]
 pub mod linux;
 #[cfg(windows)]
 pub mod windows;
@@ -60,6 +60,7 @@ struct CheckerConfig {
     search_once: bool,
     skip_libs: bool,
     check_period: std::time::Duration,
+    include_writable_code: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -97,6 +98,12 @@ impl ProcessConsistencyChecker {
         self
     }
 
+    /// also consider code mapped with write permissions, e.g. from a JIT or self-modifying code (default: false)
+    pub fn include_writable_code(&mut self, include_writable_code: bool) -> &mut Self {
+        self.config.include_writable_code = include_writable_code;
+        self
+    }
+
     /// start running checks
     pub fn run(&self, error_callback: ErrorCallback) -> Result<Never, Error> {
         run_checker(&self.config, error_callback)
@@ -128,11 +135,11 @@ pub struct MemoryError<'a> {
 
 type ErrorCallback = fn(MemoryError) -> ();
 
-fn get_all_regions(skip_libs: bool) -> Result<Vec<Region>, Error> {
+fn get_all_regions(skip_libs: bool, include_writable_code: bool) -> Result<Vec<Region>, Error> {
     #[cfg(unix)]
-    return crate::linux::get_executable_regions(skip_libs);
+    return crate::linux::get_executable_regions(skip_libs, include_writable_code);
     #[cfg(windows)]
-    crate::windows::get_executable_regions(skip_libs)
+    crate::windows::get_executable_regions(skip_libs, include_writable_code)
 }
 
 /// Return type of functions that don't return
@@ -149,7 +156,7 @@ fn run_checker(
     loop {
         let now = std::time::Instant::now();
         let regions = if !config.search_once || region_hashes.is_empty() {
-            get_all_regions(config.skip_libs)?
+            get_all_regions(config.skip_libs, config.include_writable_code)?
         } else {
             region_hashes.keys().cloned().collect() // todo: optimize?
         };
@@ -203,7 +210,7 @@ pub struct BenchmarkResult {
 
 fn run_benchmark(config: &CheckerConfig) -> Result<BenchmarkResult, Error> {
     let t0 = Instant::now();
-    let regions = get_all_regions(config.skip_libs)?;
+    let regions = get_all_regions(config.skip_libs, config.include_writable_code)?;
     let t1 = Instant::now();
     for region in &regions {
         let _ = unsafe { region.compute_hash() };

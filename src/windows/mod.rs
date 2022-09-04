@@ -6,7 +6,8 @@ use windows::Win32::{
             TH32CS_SNAPMODULE,
         },
         Memory::{
-            VirtualQuery, MEMORY_BASIC_INFORMATION, PAGE_EXECUTE_READ, PAGE_EXECUTE_WRITECOPY,
+            VirtualQuery, MEMORY_BASIC_INFORMATION, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE,
+            PAGE_EXECUTE_WRITECOPY,
         },
     },
 };
@@ -23,10 +24,13 @@ pub struct Module {
     exe_path: String,
 }
 
-pub(crate) fn get_executable_regions(skip_libs: bool) -> Result<Vec<crate::Region>, Error> {
+pub(crate) fn get_executable_regions(
+    skip_libs: bool,
+    include_writable_code: bool,
+) -> Result<Vec<crate::Region>, Error> {
     let mut res = vec![];
     for module in get_module_list(skip_libs)? {
-        res.extend(module.get_executable_regions()?);
+        res.extend(module.get_executable_regions(include_writable_code)?);
     }
     Ok(res)
 }
@@ -112,7 +116,10 @@ impl Module {
     }
 
     /// get all regions of this module that are executable
-    pub(crate) fn get_executable_regions(&self) -> Result<Vec<crate::Region>, Error> {
+    pub(crate) fn get_executable_regions(
+        &self,
+        include_writable_code: bool,
+    ) -> Result<Vec<crate::Region>, Error> {
         let mut regions = vec![];
 
         let module_end = unsafe { self.base_addr.add(self.base_size as usize) };
@@ -132,6 +139,8 @@ impl Module {
             let segment_end = segment_end.min(module_end);
             if info.Protect | PAGE_EXECUTE_READ == PAGE_EXECUTE_READ
                 || info.Protect | PAGE_EXECUTE_WRITECOPY == PAGE_EXECUTE_WRITECOPY
+                || (info.Protect | PAGE_EXECUTE_READWRITE == PAGE_EXECUTE_READWRITE
+                    && include_writable_code)
             {
                 regions.push(crate::Region {
                     start: pos,
@@ -152,4 +161,20 @@ impl Module {
 fn debug_print_vec(v: &[u32]) -> String {
     let list: Vec<_> = v.iter().map(|x| format!("{:02x}", x)).collect();
     list.join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_all_combinations() {
+        println!("{:#?}", get_executable_regions(false, false));
+        println!("----");
+        println!("{:#?}", get_executable_regions(true, false));
+        assert!(get_executable_regions(false, false).unwrap().len() > 1);
+        assert!(get_executable_regions(false, true).unwrap().len() > 1);
+        assert!(get_executable_regions(true, false).unwrap().len() <= 1);
+        assert!(get_executable_regions(true, true).unwrap().len() <= 1);
+    }
 }

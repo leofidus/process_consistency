@@ -6,7 +6,10 @@ use std::{
 
 use crate::{error::Error, Region};
 
-pub fn get_executable_regions(skip_libs: bool) -> Result<Vec<Region>, Error> {
+pub fn get_executable_regions(
+    skip_libs: bool,
+    include_writable_code: bool,
+) -> Result<Vec<Region>, Error> {
     let mut regions = vec![];
     let path = std::path::Path::new("/proc/self/maps");
     let file = File::open(path).map_err(|e| Error::ProcFsUnavailable {
@@ -26,8 +29,9 @@ pub fn get_executable_regions(skip_libs: bool) -> Result<Vec<Region>, Error> {
             path: path.to_owned(),
         })?;
         let segments: Vec<_> = line.split_whitespace().collect();
-        if !segments[1].starts_with("r-x") {
-            // todo: add option to consider rwx
+        if !segments[1].starts_with("r-x")
+            && !(include_writable_code && segments[1].starts_with("rwx"))
+        {
             continue;
         }
         let (start, end) = segments[0]
@@ -66,11 +70,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_works() {
-        println!("{:#?}", get_executable_regions(false));
+    fn test_all_combinations() {
+        println!("{:#?}", get_executable_regions(false, false));
         println!("----");
-        println!("{:#?}", get_executable_regions(true));
-        assert!(get_executable_regions(false).unwrap().len() > 2);
-        assert!(get_executable_regions(true).unwrap().len() <= 2);
+        println!("{:#?}", get_executable_regions(true, false));
+        assert!(get_executable_regions(false, false).unwrap().len() > 2);
+        assert!(get_executable_regions(false, true).unwrap().len() > 2);
+        assert!(get_executable_regions(true, false).unwrap().len() <= 2);
+        assert!(get_executable_regions(true, true).unwrap().len() <= 2);
     }
 }
