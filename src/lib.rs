@@ -96,7 +96,7 @@ use std::{collections::HashMap, time::Instant};
 
 use error::Error;
 
-#[cfg(linux)]
+#[cfg(unix)]
 mod linux;
 #[cfg(windows)]
 mod windows;
